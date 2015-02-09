@@ -1,0 +1,1 @@
+cloudy.o: ../cloudy.c

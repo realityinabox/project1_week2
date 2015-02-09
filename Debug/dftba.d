@@ -1,0 +1,1 @@
+dftba.o: ../dftba.c
