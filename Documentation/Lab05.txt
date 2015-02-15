@@ -286,6 +286,13 @@ Module "SM2"       (component SPIMaster_LDD)
                 Init() the Deinit() must be called first.
    - SM2_Deinit -This method deinitializes the device. It switches off the device, frees the device data structure memory, 
                 interrupts vectors, etc.
+   - SM2_Enable -This method enables SPI device. This method is intended to be used together with <Disable()> method to 
+                temporary switch On/Off the device after the device is initialized. This method is required if the <Enabled in 
+                init. code> property is set to "no" value.
+   - SM2_Disable -Disables the SPI device. When the device is disabled, some component methods should not be called. If so, 
+                error ERR_DISABLED may be reported. This method is intended to be used together with <Enable()> method to 
+                temporary switch on/off the device after the device is initialized. This method is not required. The <Deinit()> 
+                method can be used to switch off and uninstall the device.
    - SM2_SendBlock -This method sends a block of characters. The method returns ERR_BUSY when the previous block transmission 
                 is not completed. The method <CancelBlockTransmission> can be used to cancel a transmit operation.
    - SM2_ReceiveBlock -This method specifies the number of data to receive. The method returns ERR_BUSY until the specified 

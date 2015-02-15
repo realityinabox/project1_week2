@@ -79,6 +79,10 @@
 #include "Init_Config.h"
 #include "Application.h"
 
+#include "FX1.h"
+#include "FAT1.h"
+#include "PORT_PDD.h"
+
 // This variable is declared in Events.c and contains the current counter value
 extern volatile int counter, pb, enc_write_flag, adc1_flag, timer_1s;
 //extern const unsigned char sunny, cloudy, night;
@@ -94,14 +98,28 @@ extern volatile int counter, pb, enc_write_flag, adc1_flag, timer_1s;
 #define CELCIUS 0
 #define FAREN 1
 
+#define YEAR    (unsigned short) 2015
+#define MONTH   (uint8_t) 2
+#define DAY	    (uint8_t) 15
+
+#define HOUR	12
+#define MIN		30
+#define SEC		0
+#define MILSEC	0
+
 void update_temp_display(void);
 void update_lux_display(void);
 void read_light(void);
 void read_temp(void);
 void check_enc_pb(void);
 
+//
+void Init_SD(void);
+static void Err(void);
+static void LogToFile();
+
 /* User includes (#include below this line is not maintained by Processor Expert) */
-char *str[10], *int_str[4], *dec_str[4], *lux_str[10], *res_str[10];
+char *str[10], *int_str[4], *dec_str[4], *lux_str[10], *res_str[10], *hr_str[10], *min_str[10], *sec_str[10];
 int count = 0, conv_type = 1;
 int char_col;
 int button_pressed, enc_pb_flag = 0, temp_flag = 0, lux_flag = 1, mode = 1, hold = 0;
@@ -116,9 +134,12 @@ int main(void)
 	/*** Processor Expert internal initialization. DON'T REMOVE THIS CODE!!! ***/
 	PE_low_level_init();
 	/*** End of Processor Expert internal initialization.                    ***/
-	APP_Run();
+	Init_SD();
 	temp_flag = 1;
 	lux_flag = 1;
+
+	TmDt1_SetDate(YEAR, MONTH, DAY);
+	TmDt1_SetTime(HOUR, MIN, SEC, MILSEC);
 	/* Write your code here */
 	// Create infinite loop
 	while(1){
@@ -166,6 +187,8 @@ int main(void)
 			// update display
 			update_lux_display();
 			lux_flag = 0;
+
+			LogToFile();
 		}
 		// END DISPLAY UPDATE
 	}
@@ -356,10 +379,89 @@ void update_lux_display(void){
 	PDC1_SetPos(0,4);
 	PDC1_WriteString("Res:");
 	PDC1_WriteString(res_str);
-	PDC1_SetPos(0,5);
-	PDC1_WriteString("Lux:");
-	PDC1_WriteString("TBD");
+	//PDC1_SetPos(0,5);
+	// PDC1_WriteString("Lux:");
+	// PDC1_WriteString("TBD");
 }
+
+
+static FAT1_FATFS fileSystemObject;
+static FIL fp;
+
+
+
+void Init_SD(void) {
+
+	/* SD card detection: PTE6 with pull-down! */
+	PORT_PDD_SetPinPullSelect(PORTE_BASE_PTR, 6, PORT_PDD_PULL_DOWN);
+	PORT_PDD_SetPinPullEnable(PORTE_BASE_PTR, 6, PORT_PDD_PULL_ENABLE);
+
+	if (FAT1_Init()!=ERR_OK) { /* initialize FAT driver */
+		Err();
+	}
+	if (FAT1_mount(&fileSystemObject, "0", 1) != FR_OK) { /* mount file system */
+		Err();
+	}
+}
+
+static void Err(void) {
+	for(;;){}
+}
+
+static void LogToFile() {
+	uint8_t write_buf[48];
+	UINT bw;
+	TIMEREC time;
+	DATEREC date;
+
+	/* open file */
+	if (FAT1_open(&fp, "./log.txt", FA_OPEN_ALWAYS|FA_WRITE)!=FR_OK) {
+		Err();
+	}
+	/* move to the end of the file */
+	if (FAT1_lseek(&fp, fp.fsize) != FR_OK || fp.fptr != fp.fsize) {
+		Err();
+	}
+	/* get time */
+	if (TmDt1_GetTime(&time)!=ERR_OK) {
+		Err();
+	}
+	/*Get date*/
+	if (TmDt1_GetDate(&date) != ERR_OK){
+		Err();
+	}
+
+	/* write data */
+	write_buf[0] = '\0';
+	UTIL1_strcatNum8u(write_buf, sizeof(write_buf), date.Month);
+	UTIL1_chcat(write_buf, sizeof(write_buf), '/');
+	UTIL1_strcatNum8u(write_buf, sizeof(write_buf), date.Day);
+	UTIL1_chcat(write_buf, sizeof(write_buf), '/');
+	UTIL1_strcatNum16u(write_buf, sizeof(write_buf), date.Year);
+	UTIL1_chcat(write_buf, sizeof(write_buf), '\t');
+	UTIL1_strcatNum8u(write_buf, sizeof(write_buf), time.Hour);
+	UTIL1_chcat(write_buf, sizeof(write_buf), ':');
+	UTIL1_strcatNum8u(write_buf, sizeof(write_buf), time.Min);
+	UTIL1_chcat(write_buf, sizeof(write_buf), ':');
+	UTIL1_strcatNum8u(write_buf, sizeof(write_buf), time.Sec);
+	UTIL1_chcat(write_buf, sizeof(write_buf), '\t');
+
+	UTIL1_strcatNum16s(write_buf, sizeof(write_buf), temp_C);
+	UTIL1_chcat(write_buf, sizeof(write_buf), '\t');
+	UTIL1_strcatNum16s(write_buf, sizeof(write_buf), temp_F);
+	UTIL1_chcat(write_buf, sizeof(write_buf), '\t');
+	UTIL1_strcatNum16s(write_buf, sizeof(write_buf), light);
+	UTIL1_chcat(write_buf, sizeof(write_buf), '\t');
+	UTIL1_strcatNum16s(write_buf, sizeof(write_buf), resistance);
+	UTIL1_strcat(write_buf, sizeof(write_buf), (unsigned char*)"\r\n");
+	if (FAT1_write(&fp, write_buf, UTIL1_strlen((char*)write_buf), &bw)!=FR_OK) {
+		(void)FAT1_close(&fp);
+		Err();
+	}
+	/* closing file */
+	(void)FAT1_close(&fp);
+}
+
 /* END main */
 /*!
  ** @}

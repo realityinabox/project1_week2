@@ -6,7 +6,7 @@
 **     Component   : SPIMaster_LDD
 **     Version     : Component 01.111, Driver 01.08, CPU db: 3.00.000
 **     Compiler    : GNU C Compiler
-**     Date/Time   : 2015-02-09, 10:18, # CodeGen: 24
+**     Date/Time   : 2015-02-09, 13:22, # CodeGen: 27
 **     Abstract    :
 **         This component "SPIMaster_LDD" implements MASTER part of synchronous
 **         serial master-slave communication.
@@ -82,6 +82,8 @@
 **     Contents    :
 **         Init                - LDD_TDeviceData* SM2_Init(LDD_TUserData *UserDataPtr);
 **         Deinit              - void SM2_Deinit(LDD_TDeviceData *DeviceDataPtr);
+**         Enable              - LDD_TError SM2_Enable(LDD_TDeviceData *DeviceDataPtr);
+**         Disable             - LDD_TError SM2_Disable(LDD_TDeviceData *DeviceDataPtr);
 **         SendBlock           - LDD_TError SM2_SendBlock(LDD_TDeviceData *DeviceDataPtr, LDD_TData...
 **         ReceiveBlock        - LDD_TError SM2_ReceiveBlock(LDD_TDeviceData *DeviceDataPtr, LDD_TData...
 **         SelectConfiguration - LDD_TError SM2_SelectConfiguration(LDD_TDeviceData *DeviceDataPtr, uint8_t...
@@ -158,6 +160,8 @@ extern "C" {
 /* Methods configuration constants - generated for all enabled component's methods */
 #define SM2_Init_METHOD_ENABLED        /*!< Init method of the component SM2 is enabled (generated) */
 #define SM2_Deinit_METHOD_ENABLED      /*!< Deinit method of the component SM2 is enabled (generated) */
+#define SM2_Enable_METHOD_ENABLED      /*!< Enable method of the component SM2 is enabled (generated) */
+#define SM2_Disable_METHOD_ENABLED     /*!< Disable method of the component SM2 is enabled (generated) */
 #define SM2_SendBlock_METHOD_ENABLED   /*!< SendBlock method of the component SM2 is enabled (generated) */
 #define SM2_ReceiveBlock_METHOD_ENABLED /*!< ReceiveBlock method of the component SM2 is enabled (generated) */
 #define SM2_SelectConfiguration_METHOD_ENABLED /*!< SelectConfiguration method of the component SM2 is enabled (generated) */
@@ -212,6 +216,54 @@ LDD_TDeviceData* SM2_Init(LDD_TUserData *UserDataPtr);
 */
 /* ===================================================================*/
 void SM2_Deinit(LDD_TDeviceData *DeviceDataPtr);
+
+/*
+** ===================================================================
+**     Method      :  SM2_Enable (component SPIMaster_LDD)
+*/
+/*!
+**     @brief
+**         This method enables SPI device. This method is intended to
+**         be used together with <Disable()> method to temporary switch
+**         On/Off the device after the device is initialized. This
+**         method is required if the <Enabled in init. code> property
+**         is set to "no" value.
+**     @param
+**         DeviceDataPtr   - Device data structure
+**                           pointer returned by <Init> method.
+**     @return
+**                         - Error code, possible codes:
+**                           ERR_OK - OK
+**                           ERR_SPEED - The device doesn't work in the
+**                           active clock configuration
+*/
+/* ===================================================================*/
+LDD_TError SM2_Enable(LDD_TDeviceData *DeviceDataPtr);
+
+/*
+** ===================================================================
+**     Method      :  SM2_Disable (component SPIMaster_LDD)
+*/
+/*!
+**     @brief
+**         Disables the SPI device. When the device is disabled, some
+**         component methods should not be called. If so, error
+**         ERR_DISABLED may be reported. This method is intended to be
+**         used together with <Enable()> method to temporary switch
+**         on/off the device after the device is initialized. This
+**         method is not required. The <Deinit()> method can be used to
+**         switch off and uninstall the device.
+**     @param
+**         DeviceDataPtr   - Device data structure
+**                           pointer returned by <Init> method.
+**     @return
+**                         - Error code, possible codes:
+**                           ERR_OK - OK
+**                           ERR_SPEED - The device doesn't work in the
+**                           active clock configuration
+*/
+/* ===================================================================*/
+LDD_TError SM2_Disable(LDD_TDeviceData *DeviceDataPtr);
 
 /*
 ** ===================================================================

@@ -6,7 +6,7 @@
 **     Component   : SPIMaster_LDD
 **     Version     : Component 01.111, Driver 01.08, CPU db: 3.00.000
 **     Compiler    : GNU C Compiler
-**     Date/Time   : 2015-02-09, 10:18, # CodeGen: 24
+**     Date/Time   : 2015-02-09, 13:22, # CodeGen: 27
 **     Abstract    :
 **         This component "SPIMaster_LDD" implements MASTER part of synchronous
 **         serial master-slave communication.
@@ -82,6 +82,8 @@
 **     Contents    :
 **         Init                - LDD_TDeviceData* SM2_Init(LDD_TUserData *UserDataPtr);
 **         Deinit              - void SM2_Deinit(LDD_TDeviceData *DeviceDataPtr);
+**         Enable              - LDD_TError SM2_Enable(LDD_TDeviceData *DeviceDataPtr);
+**         Disable             - LDD_TError SM2_Disable(LDD_TDeviceData *DeviceDataPtr);
 **         SendBlock           - LDD_TError SM2_SendBlock(LDD_TDeviceData *DeviceDataPtr, LDD_TData...
 **         ReceiveBlock        - LDD_TError SM2_ReceiveBlock(LDD_TDeviceData *DeviceDataPtr, LDD_TData...
 **         SelectConfiguration - LDD_TError SM2_SelectConfiguration(LDD_TDeviceData *DeviceDataPtr, uint8_t...
@@ -155,6 +157,7 @@ static const uint32_t TxCommandList[SM2_CONFIGURATION_COUNT] = {
 };
 
 typedef struct {
+  bool EnUser;                         /* Enable/Disable device */
   uint32_t TxCommand;                  /* Current Tx command */
   LDD_SPIMASTER_TError ErrFlag;        /* Error flags */
   uint16_t InpRecvDataNum;             /* The counter of received characters */
@@ -173,6 +176,7 @@ static SM2_TDeviceData DeviceDataPrv__DEFAULT_RTOS_ALLOC;
 /* {Default RTOS Adapter} Global variable used for passing a parameter into ISR */
 static SM2_TDeviceDataPtr INT_SPI1__DEFAULT_RTOS_ISRPARAM;
 /* Internal method prototypes */
+static void HWEnDi(LDD_TDeviceData *DeviceDataPtr);
 
 /*
 ** ===================================================================
@@ -208,6 +212,7 @@ LDD_TDeviceData* SM2_Init(LDD_TUserData *UserDataPtr)
   /* Interrupt vector(s) allocation */
   /* {Default RTOS Adapter} Set interrupt vector: IVT is static, ISR parameter is passed by the global variable */
   INT_SPI1__DEFAULT_RTOS_ISRPARAM = DeviceDataPrv;
+  DeviceDataPrv->EnUser = TRUE;        /* Enable device */
   DeviceDataPrv->TxCommand = 0x80000000U; /* Initialization of current Tx command */
   DeviceDataPrv->ErrFlag = 0x00U;      /* Clear error flags */
   /* Clear the receive counters and pointer */
@@ -288,8 +293,6 @@ LDD_TDeviceData* SM2_Init(LDD_TUserData *UserDataPtr)
             0x00200000U;               /* Clear flags */
   /* SPI1_RSER: TCF_RE=0,??=0,??=0,EOQF_RE=0,TFUF_RE=0,??=0,TFFF_RE=0,TFFF_DIRS=0,??=0,??=0,??=0,??=0,RFOF_RE=0,??=0,RFDF_RE=1,RFDF_DIRS=0,??=0,??=0,??=0,??=0,??=0,??=0,??=0,??=0,??=0,??=0,??=0,??=0,??=0,??=0,??=0,??=0 */
   SPI1_RSER = SPI_RSER_RFDF_RE_MASK;   /* Set DMA Interrupt Request Select and Enable register */
-  /* SPI1_MCR: HALT=0 */
-  SPI1_MCR &= (uint32_t)~(uint32_t)(SPI_MCR_HALT_MASK);
   /* Registration of the device structure */
   PE_LDD_RegisterDeviceStructure(PE_LDD_COMPONENT_SM2_ID,DeviceDataPrv);
   return ((LDD_TDeviceData *)DeviceDataPrv); /* Return pointer to the data data structure */
@@ -330,6 +333,68 @@ void SM2_Deinit(LDD_TDeviceData *DeviceDataPtr)
 
 /*
 ** ===================================================================
+**     Method      :  SM2_Enable (component SPIMaster_LDD)
+*/
+/*!
+**     @brief
+**         This method enables SPI device. This method is intended to
+**         be used together with <Disable()> method to temporary switch
+**         On/Off the device after the device is initialized. This
+**         method is required if the <Enabled in init. code> property
+**         is set to "no" value.
+**     @param
+**         DeviceDataPtr   - Device data structure
+**                           pointer returned by <Init> method.
+**     @return
+**                         - Error code, possible codes:
+**                           ERR_OK - OK
+**                           ERR_SPEED - The device doesn't work in the
+**                           active clock configuration
+*/
+/* ===================================================================*/
+LDD_TError SM2_Enable(LDD_TDeviceData *DeviceDataPtr)
+{
+  if (!((SM2_TDeviceDataPtr)DeviceDataPtr)->EnUser) { /* Is the device disabled by user? */
+    ((SM2_TDeviceDataPtr)DeviceDataPtr)->EnUser = TRUE; /* If yes then set the flag "device enabled" */
+    HWEnDi((SM2_TDeviceDataPtr)DeviceDataPtr); /* Enable the device */
+  }
+  return ERR_OK;                       /* OK */
+}
+
+/*
+** ===================================================================
+**     Method      :  SM2_Disable (component SPIMaster_LDD)
+*/
+/*!
+**     @brief
+**         Disables the SPI device. When the device is disabled, some
+**         component methods should not be called. If so, error
+**         ERR_DISABLED may be reported. This method is intended to be
+**         used together with <Enable()> method to temporary switch
+**         on/off the device after the device is initialized. This
+**         method is not required. The <Deinit()> method can be used to
+**         switch off and uninstall the device.
+**     @param
+**         DeviceDataPtr   - Device data structure
+**                           pointer returned by <Init> method.
+**     @return
+**                         - Error code, possible codes:
+**                           ERR_OK - OK
+**                           ERR_SPEED - The device doesn't work in the
+**                           active clock configuration
+*/
+/* ===================================================================*/
+LDD_TError SM2_Disable(LDD_TDeviceData *DeviceDataPtr)
+{
+  if (((SM2_TDeviceDataPtr)DeviceDataPtr)->EnUser) { /* Is the device enabled by user? */
+    ((SM2_TDeviceDataPtr)DeviceDataPtr)->EnUser = FALSE; /* If yes then set the flag "device disabled" */
+    HWEnDi((SM2_TDeviceDataPtr)DeviceDataPtr); /* Disable the device */
+  }
+  return ERR_OK;                       /* OK */
+}
+
+/*
+** ===================================================================
 **     Method      :  SM2_ReceiveBlock (component SPIMaster_LDD)
 */
 /*!
@@ -358,6 +423,11 @@ void SM2_Deinit(LDD_TDeviceData *DeviceDataPtr)
 /* ===================================================================*/
 LDD_TError SM2_ReceiveBlock(LDD_TDeviceData *DeviceDataPtr, LDD_TData *BufferPtr, uint16_t Size)
 {
+  /* Device state test - this test can be disabled by setting the "Ignore enable test"
+     property to the "yes" value in the "Configuration inspector" */
+  if (!((SM2_TDeviceDataPtr)DeviceDataPtr)->EnUser) { /* Is the device disabled by user? */
+    return ERR_DISABLED;               /* If yes then error */
+  }
   if (((SM2_TDeviceDataPtr)DeviceDataPtr)->InpDataNumReq != 0x00U) { /* Is the previous receive operation pending? */
     return ERR_BUSY;                   /* If yes then error */
   }
@@ -401,6 +471,11 @@ LDD_TError SM2_ReceiveBlock(LDD_TDeviceData *DeviceDataPtr, LDD_TData *BufferPtr
 /* ===================================================================*/
 LDD_TError SM2_SendBlock(LDD_TDeviceData *DeviceDataPtr, LDD_TData *BufferPtr, uint16_t Size)
 {
+  /* Device state test - this test can be disabled by setting the "Ignore enable test"
+     property to the "yes" value in the "Configuration inspector" */
+  if (!((SM2_TDeviceDataPtr)DeviceDataPtr)->EnUser) { /* Is the device disabled by user? */
+    return ERR_DISABLED;               /* If yes then error */
+  }
   if (((SM2_TDeviceDataPtr)DeviceDataPtr)->OutDataNumReq != 0x00U) { /* Is the previous transmit operation pending? */
     return ERR_BUSY;                   /* If yes then error */
   }
@@ -452,6 +527,11 @@ LDD_TError SM2_SendBlock(LDD_TDeviceData *DeviceDataPtr, LDD_TData *BufferPtr, u
 /* ===================================================================*/
 LDD_TError SM2_SelectConfiguration(LDD_TDeviceData *DeviceDataPtr, uint8_t ChipSelect, uint8_t AttributeSet)
 {
+  /* Device state test - this test can be disabled by setting the "Ignore enable test"
+     property to the "yes" value in the "Configuration inspector" */
+  if (!((SM2_TDeviceDataPtr)DeviceDataPtr)->EnUser) { /* Is the device disabled by user? */
+    return ERR_DISABLED;               /* If yes then error */
+  }
   (void)ChipSelect;                    /* Parameter is not used, suppress unused argument warning */
   if (AttributeSet >= SM2_CONFIGURATION_COUNT) { /* Is Attribute set index out of range? */
     return ERR_PARAM_ATTRIBUTE_SET;    /* Yes, return ERR_PARAM */
@@ -511,6 +591,36 @@ PE_ISR(SM2_Interrupt)
       SPI_PDD_DisableDmasInterrupts(SPI1_BASE_PTR, SPI_PDD_TX_FIFO_FILL_INT_DMA); /* Disable TX interrupt */
     }
     SPI_PDD_ClearInterruptFlags(SPI1_BASE_PTR,SPI_PDD_TX_FIFO_FILL_INT_DMA); /* Clear Tx FIFO fill flags */
+  }
+}
+
+/*
+** ===================================================================
+**     Method      :  HWEnDi (component SPIMaster_LDD)
+**
+**     Description :
+**         Enables or disables the peripheral(s) associated with the 
+**         component. The method is called automatically as a part of the 
+**         Enable and Disable methods and several internal methods.
+**         This method is internal. It is used by Processor Expert only.
+** ===================================================================
+*/
+static void HWEnDi(LDD_TDeviceData *DeviceDataPtr)
+{
+  if (((SM2_TDeviceDataPtr)DeviceDataPtr)->EnUser) { /* Enable device? */
+    ((SM2_TDeviceDataPtr)DeviceDataPtr)->OutDataNumReq = 0x00U; /* Clear the counter of requested outgoing characters. */
+    ((SM2_TDeviceDataPtr)DeviceDataPtr)->OutSentDataNum = 0x00U; /* Clear the counter of sent characters. */
+    ((SM2_TDeviceDataPtr)DeviceDataPtr)->InpDataNumReq = 0x00U; /* Clear the counter of requested incoming characters. */
+    ((SM2_TDeviceDataPtr)DeviceDataPtr)->InpRecvDataNum = 0x00U; /* Clear the counter of received characters. */
+    SPI_PDD_EnableDevice(SPI1_BASE_PTR,PDD_ENABLE); /* Enable device */
+    SPI_PDD_ClearTxFIFO(SPI1_BASE_PTR); /* Clear Tx FIFO */
+    SPI_PDD_ClearRxFIFO(SPI1_BASE_PTR); /* Clear Rx FIFO */
+    SPI_PDD_ClearInterruptFlags(SPI1_BASE_PTR,SPI_PDD_ALL_INT); /* Clear all HW flags */
+    SPI_PDD_EnableHaltMode(SPI1_BASE_PTR,PDD_DISABLE); /* Leave the STOPPED mode */
+  }
+  else {
+    SPI_PDD_EnableHaltMode(SPI1_BASE_PTR,PDD_ENABLE); /* Enter to STOPPED mode */
+    SPI_PDD_EnableDevice(SPI1_BASE_PTR,PDD_DISABLE); /* Disable device */
   }
 }
 
